@@ -58,7 +58,7 @@
 // export default App
 
 import { useEffect, useState } from "react";
-import axios from 'axios';
+import personService from './services/persons'
 
 import Filter from './components/Filter'
 import PersonForm from './components/PersonForm'
@@ -71,10 +71,10 @@ const App = () => {
   const [ filter, setFilter] = useState('')
 
   useEffect(() => {
-    axios
-      .get('http://localhost:3001/persons')
-      .then(response => {
-        setPersons(response.data)
+    personService
+      .getAll()
+      .then(initialPersons => {
+        setPersons(initialPersons)
       })
   }, [])
 
@@ -90,29 +90,68 @@ const App = () => {
     setFilter(event.target.value)
   }
 
+  const handleDelete = (id) => {
+    const person = persons.find(p => p.id === id)
+    if (window.confirm(`Delete ${person.name}?`)) {
+      personService
+        .remove(id)
+        .then(() => {
+          setPersons(persons.filter(p => p.id !== id))
+        })
+        .catch(() => {
+          alert(`The person '${person.name}' was already removed from the server`)
+          setPersons(persons.filter(p => p.id !== id))
+        })
+    }
+  }
+
   const addPerson = (event) => {
     event.preventDefault()
 
-    const nameExists = persons.some(person => person.name === newName)
+    const existingPerson = persons.find(person => person.name === newName)
 
-    if (nameExists) {
-      alert(`${newName} is already added to phonebook`)
+    if (existingPerson) {
+      if (existingPerson.number === newNumber) {
+        alert(`${newName} with number ${newNumber} is already in the phonebook`)
+        return
+      }
+      
+      const confirmUpdate = window.confirm(
+        `${newName} is already added to phonebook, replace the old number with a new one?`
+      )
+
+      if (confirmUpdate) {
+        const updatePerson = { ...existingPerson, number: newNumber }
+      
+        personService
+          .update(existingPerson.id, updatePerson)
+          .then(returnedPerson => {
+            setPersons(persons.map(p => p.id !== existingPerson.id ? p : returnedPerson))
+            setNewName('')
+            setNewNumber('')
+          })
+          .catch(() => {
+            alert(`Failed to update ${newName}. It may have been removed from the server.`)
+            setPersons(persons.filter(p => p.id !== existingPerson.id))
+          })
+      }
+
       return
     }
 
-    const nextId = persons.length > 0
-      ? Math.max(...persons.map(p => p.id)) + 1
-      : 1
 
     const newPerson = {
-      id: nextId,
       name: newName,
       number: newNumber,
     }
 
-    setPersons(persons.concat(newPerson))
-    setNewName('')
-    setNewNumber('')
+    personService
+      .create(newPerson)
+      .then(returnedPerson => {
+        setPersons(persons.concat(returnedPerson))
+        setNewName('')
+        setNewNumber('')
+      })
   }
 
   const personsToShow = filter
@@ -120,6 +159,7 @@ const App = () => {
         person.name.toLowerCase().includes(filter.toLowerCase())
     )
     : persons
+  
 
   return (
     <div>
@@ -137,7 +177,10 @@ const App = () => {
     />
 
     <h3>Numbers</h3>
-    <Persons persons={personsToShow}/>
+    <Persons 
+    persons={personsToShow}
+    handleDelete={handleDelete}
+    />
     </div>
   )
 }
